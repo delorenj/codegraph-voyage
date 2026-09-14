@@ -12,7 +12,7 @@ Metrics reported:
   - NDCG@10
 
 Run:
-    python -m tools.codegraph_voyage.tests.benchmark [--verbose]
+    python -m codegraph_voyage.tests.benchmark [--verbose]
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from tools.codegraph_voyage.providers import FakeEmbeddingProvider
-from tools.codegraph_voyage.ranking import (
+from codegraph_voyage.providers import FakeEmbeddingProvider
+from codegraph_voyage.ranking import (
     RankingResult,
     reciprocal_rank_fusion,
     rank_by_lexical_similarity,

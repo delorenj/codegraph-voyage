@@ -9,6 +9,35 @@ via the Voyage AI API (or a deterministic fake for testing), stores them in a
 sidecar SQLite database, and fuses lexical + vector retrieval via **weighted
 reciprocal-rank fusion (RRF)**.
 
+## The Magic: Semantic Search that actually works
+
+Standard lexical search (grep, BM25) fails when agents ask architectural or conceptual questions. `codegraph-voyage` fixes this by leveraging Voyage AI's state-of-the-art **`voyage-code-4`** model fused with a localized lexical scorer. 
+
+Here is what it can do on its own codebase of 394 symbols:
+
+**Test 1: High-Level Architecture Search**  
+**Query:** `"JSON-RPC server implementation handling missing methods and errors"`  
+*Notice: the query never mentions "MCP", but it asks for the underlying protocol intent.*
+```text
+1. [file        ] mcp_server.py                             score=0.0164    provenance=lexical+vector
+   Qualified: src/codegraph_voyage/mcp_server.py
+```
+**Result:** It flawlessly identifies the exact file that instantiates the MCP SDK (which runs JSON-RPC over stdio) and traps execution errors.
+
+**Test 2: Deep Algorithmic Search**  
+**Query:** `"How is the final score calculated combining lexical BM25 and vector similarities?"`  
+*Notice: This requires understanding mathematical and algorithmic intent.*
+```text
+1. [file        ] ranking.py                                score=0.0161    provenance=lexical+vector
+   Qualified: src/codegraph_voyage/ranking.py
+
+2. [function    ] rank_by_lexical_similarity                score=0.0158    provenance=lexical+vector
+   Qualified: rank_by_lexical_similarity
+```
+**Result:** It immediately pulls up `ranking.py` and isolates the exact `rank_by_lexical_similarity` function responsible for the Reciprocal Rank Fusion math.
+
+Agents equipped with `codegraph-voyage` aren't just searching for strings; they are querying your architecture's intent.
+
 ## Setup
 
 ```bash

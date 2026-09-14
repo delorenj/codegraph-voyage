@@ -62,7 +62,7 @@ class Greeter:
         return node
 
     def test_build_document_basic(self):
-        from tools.codegraph_voyage.document import build_document
+        from codegraph_voyage.document import build_document
         doc = build_document(self._make_node(), self.root)
         self.assertIn("Symbol: hello", doc)
         self.assertIn("Qualified Name: example.hello", doc)
@@ -72,18 +72,18 @@ class Greeter:
         self.assertIn('return "hello"', doc)
 
     def test_build_document_no_source(self):
-        from tools.codegraph_voyage.document import build_document
+        from codegraph_voyage.document import build_document
         doc = build_document(self._make_node(), self.root, include_source=False)
         self.assertIn("Symbol: hello", doc)
         self.assertNotIn('def hello():', doc)
 
     def test_build_document_max_lines(self):
-        from tools.codegraph_voyage.document import build_document
+        from codegraph_voyage.document import build_document
         doc = build_document(self._make_node(), self.root, max_source_lines=1)
         self.assertIn("truncated at 1 lines", doc)
 
     def test_build_document_missing_file(self):
-        from tools.codegraph_voyage.document import build_document
+        from codegraph_voyage.document import build_document
         node = self._make_node(file_path="nonexistent.py")
         doc = build_document(node, self.root)
         self.assertIn("Symbol: hello", doc)
@@ -91,7 +91,7 @@ class Greeter:
         self.assertNotIn("Source:", doc)
 
     def test_source_path_cannot_escape_root(self):
-        from tools.codegraph_voyage.document import build_document
+        from codegraph_voyage.document import build_document
         outside = self.root.parent / "outside-codegraph-voyage.txt"
         outside.write_text("must-not-be-embedded")
         try:
@@ -103,7 +103,7 @@ class Greeter:
             outside.unlink(missing_ok=True)
 
     def test_compute_content_hash(self):
-        from tools.codegraph_voyage.document import compute_content_hash
+        from codegraph_voyage.document import compute_content_hash
         h1 = compute_content_hash("hello world")
         h2 = compute_content_hash("hello world")
         h3 = compute_content_hash("hello world!")
@@ -112,7 +112,7 @@ class Greeter:
 
     def test_build_documents_from_db_empty(self):
         """Table doesn't exist yet — should raise or handle gracefully."""
-        from tools.codegraph_voyage.document import build_documents_from_db, DocumentConstructionError
+        from codegraph_voyage.document import build_documents_from_db, DocumentConstructionError
         fake_db = self.root / "codegraph.db"
         # Not a valid SQLite DB
         fake_db.write_text("not a database")
@@ -128,7 +128,7 @@ class TestSanitization(unittest.TestCase):
     """is_sensitive_path and sanitize_content."""
 
     def test_sensitive_paths(self):
-        from tools.codegraph_voyage.sanitize import is_sensitive_path
+        from codegraph_voyage.sanitize import is_sensitive_path
         self.assertTrue(is_sensitive_path(".env"))
         self.assertTrue(is_sensitive_path("config/.env.production"))
         self.assertTrue(is_sensitive_path("credentials/aws.json"))
@@ -147,7 +147,7 @@ class TestSanitization(unittest.TestCase):
         self.assertFalse(is_sensitive_path("README.md"))
 
     def test_sanitize_content(self):
-        from tools.codegraph_voyage.sanitize import sanitize_content
+        from codegraph_voyage.sanitize import sanitize_content
         content = "public code\npassword = 'supersecret'\nmore public code"
         result = sanitize_content(content, "src/main.py")
         self.assertIn("public code", result)
@@ -156,19 +156,19 @@ class TestSanitization(unittest.TestCase):
         self.assertNotIn("supersecret", result)
 
     def test_sanitize_content_sensitive_path(self):
-        from tools.codegraph_voyage.sanitize import sanitize_content
+        from codegraph_voyage.sanitize import sanitize_content
         result = sanitize_content("anything", ".env")
         self.assertEqual(result, "[content excluded: sensitive path]")
 
     def test_sanitize_content_all_redacted(self):
-        from tools.codegraph_voyage.sanitize import sanitize_content
+        from codegraph_voyage.sanitize import sanitize_content
         # Use a value >= 8 chars to match the {8,} pattern
         result = sanitize_content("password = 'hunter2!!'", "src/main.py")
         # The line is replaced with a redacted marker, not removed
         self.assertIn("[redacted", result)
 
     def test_structured_secret_assignments_are_redacted(self):
-        from tools.codegraph_voyage.sanitize import sanitize_content
+        from codegraph_voyage.sanitize import sanitize_content
         secret = "live-secret-938475"
         content = "\n".join([
             f'{{"password": "{secret}"}}',
@@ -182,12 +182,12 @@ class TestSanitization(unittest.TestCase):
         self.assertEqual(result.count("[redacted"), 5)
 
     def test_placeholders_are_not_redacted(self):
-        from tools.codegraph_voyage.sanitize import sanitize_content
+        from codegraph_voyage.sanitize import sanitize_content
         content = 'password = "placeholder"\ntoken: ${TOKEN}'
         self.assertEqual(sanitize_content(content, "config/example.yaml"), content)
 
     def test_private_key_block_is_redacted(self):
-        from tools.codegraph_voyage.sanitize import sanitize_content
+        from codegraph_voyage.sanitize import sanitize_content
         begin_marker = "-----BEGIN " + "OPENSSH PRIVATE KEY" + "-----"
         end_marker = "-----END " + "OPENSSH PRIVATE KEY" + "-----"
         secret = "SECRETKEYDATA"
@@ -196,8 +196,8 @@ class TestSanitization(unittest.TestCase):
         self.assertNotIn(secret, result)
 
     def test_sanitized_outbound_payload_has_no_secret(self):
-        from tools.codegraph_voyage.providers import VoyageEmbeddingProvider
-        from tools.codegraph_voyage.sanitize import sanitize_content
+        from codegraph_voyage.providers import VoyageEmbeddingProvider
+        from codegraph_voyage.sanitize import sanitize_content
         secret = "voyage-must-never-see-this"
         sanitized = sanitize_content(f'{{"api_key": "{secret}"}}', "config.json")
         provider = VoyageEmbeddingProvider(api_key="test-key", dimensions=2)
@@ -219,7 +219,7 @@ class TestProviders(unittest.TestCase):
     construction via mocked urllib."""
 
     def test_fake_determinism(self):
-        from tools.codegraph_voyage.providers import FakeEmbeddingProvider
+        from codegraph_voyage.providers import FakeEmbeddingProvider
         p = FakeEmbeddingProvider(dimensions=8)
         texts = ["hello", "world"]
         emb1 = p.embed_documents(texts)
@@ -233,7 +233,7 @@ class TestProviders(unittest.TestCase):
         self.assertEqual(emb1[0], emb3[0])  # same text, same seed → same
 
     def test_fake_query_vs_document(self):
-        from tools.codegraph_voyage.providers import FakeEmbeddingProvider
+        from codegraph_voyage.providers import FakeEmbeddingProvider
         p = FakeEmbeddingProvider(dimensions=4)
         q = p.embed_query("test")
         d = p.embed_documents(["test"])[0]
@@ -241,13 +241,13 @@ class TestProviders(unittest.TestCase):
         self.assertNotEqual(q, d)
 
     def test_fake_properties(self):
-        from tools.codegraph_voyage.providers import FakeEmbeddingProvider
+        from codegraph_voyage.providers import FakeEmbeddingProvider
         p = FakeEmbeddingProvider(dimensions=256)
         self.assertEqual(p.model_name, "fake-embedding-v1")
         self.assertEqual(p.dimensions, 256)
 
     def test_raw_bytes_roundtrip(self):
-        from tools.codegraph_voyage.providers import FakeEmbeddingProvider
+        from codegraph_voyage.providers import FakeEmbeddingProvider
         p = FakeEmbeddingProvider(dimensions=8)
         vec = p._derive("test")
         blob = p.raw_bytes(vec)
@@ -256,14 +256,14 @@ class TestProviders(unittest.TestCase):
         self.assertEqual(len(vec), len(restored))
 
     def test_voyage_requires_key(self):
-        from tools.codegraph_voyage.providers import VoyageEmbeddingProvider
+        from codegraph_voyage.providers import VoyageEmbeddingProvider
         with mock.patch.dict("os.environ", {"VOYAGE_API_KEY": ""}):
             with self.assertRaises(ValueError):
                 VoyageEmbeddingProvider(api_key="")
 
     def test_voyage_mocked_request(self):
         """Mock urllib.request to verify input_type payload."""
-        from tools.codegraph_voyage.providers import VoyageEmbeddingProvider
+        from codegraph_voyage.providers import VoyageEmbeddingProvider
 
         provider = VoyageEmbeddingProvider(api_key="test-key", model="voyage-code-4", dimensions=512)
 
@@ -296,7 +296,7 @@ class TestProviders(unittest.TestCase):
             self.assertEqual(result[0][0], 0.1)
 
     def test_voyage_query_uses_query_input_type(self):
-        from tools.codegraph_voyage.providers import VoyageEmbeddingProvider
+        from codegraph_voyage.providers import VoyageEmbeddingProvider
         provider = VoyageEmbeddingProvider(api_key="test-key", dimensions=2)
         fake_response = json.dumps({
             "data": [{"index": 0, "embedding": [0.4, 0.6]}]
@@ -311,7 +311,7 @@ class TestProviders(unittest.TestCase):
 
     def test_voyage_empty_texts(self):
         """Empty texts should return empty lists without API call."""
-        from tools.codegraph_voyage.providers import VoyageEmbeddingProvider
+        from codegraph_voyage.providers import VoyageEmbeddingProvider
         provider = VoyageEmbeddingProvider(api_key="test-key")
         with mock.patch("urllib.request.urlopen") as mock_urlopen:
             result = provider.embed_documents(["", "  "])
@@ -321,7 +321,7 @@ class TestProviders(unittest.TestCase):
 
     def test_voyage_mixed_empty_and_valid(self):
         """Mix of empty and valid texts — only valid ones sent to API."""
-        from tools.codegraph_voyage.providers import VoyageEmbeddingProvider
+        from codegraph_voyage.providers import VoyageEmbeddingProvider
         provider = VoyageEmbeddingProvider(api_key="test-key", dimensions=4)
 
         fake_response = json.dumps({
@@ -349,7 +349,7 @@ class TestProviders(unittest.TestCase):
 
     def test_voyage_http_error_no_body_in_message(self):
         """HTTP error should not include response body in error message."""
-        from tools.codegraph_voyage.providers import VoyageEmbeddingProvider
+        from codegraph_voyage.providers import VoyageEmbeddingProvider
         provider = VoyageEmbeddingProvider(api_key="test-key")
 
         with mock.patch("urllib.request.urlopen") as mock_urlopen:
@@ -366,7 +366,7 @@ class TestProviders(unittest.TestCase):
             self.assertIn("401", str(ctx.exception))
 
     def test_voyage_batches_more_than_128_in_order(self):
-        from tools.codegraph_voyage.providers import VoyageEmbeddingProvider
+        from codegraph_voyage.providers import VoyageEmbeddingProvider
         provider = VoyageEmbeddingProvider(api_key="test-key", dimensions=2)
 
         def response_for(request, timeout=None):
@@ -390,7 +390,7 @@ class TestProviders(unittest.TestCase):
         self.assertEqual([row[0] for row in result], list(map(float, range(257))))
 
     def test_voyage_configurable_batch_size_and_partial_failure(self):
-        from tools.codegraph_voyage.providers import VoyageEmbeddingProvider
+        from codegraph_voyage.providers import VoyageEmbeddingProvider
         provider = VoyageEmbeddingProvider(api_key="test-key", dimensions=1, batch_size=2)
         good = mock.MagicMock()
         good.__enter__.return_value.read.return_value = json.dumps({
@@ -404,7 +404,7 @@ class TestProviders(unittest.TestCase):
                 provider.embed_documents(["a", "b", "c"])
 
     def test_voyage_response_validation(self):
-        from tools.codegraph_voyage.providers import VoyageEmbeddingProvider
+        from codegraph_voyage.providers import VoyageEmbeddingProvider
         provider = VoyageEmbeddingProvider(api_key="test-key", dimensions=2)
         invalid = [
             {"data": [{"index": 0, "embedding": [0.1, 0.2]}]},
@@ -419,7 +419,7 @@ class TestProviders(unittest.TestCase):
                     provider.embed_documents(["a", "b"])
 
     def test_create_provider(self):
-        from tools.codegraph_voyage.providers import create_provider, FakeEmbeddingProvider, VoyageEmbeddingProvider
+        from codegraph_voyage.providers import create_provider, FakeEmbeddingProvider, VoyageEmbeddingProvider
         p1 = create_provider("fake")
         self.assertIsInstance(p1, FakeEmbeddingProvider)
         with self.assertRaises(ValueError):
@@ -442,11 +442,11 @@ class TestSidecarDB(unittest.TestCase):
         shutil.rmtree(str(self.tmpdir), ignore_errors=True)
 
     def _make_provider(self, name="fake-embedding-v1", dims=512):
-        from tools.codegraph_voyage.providers import FakeEmbeddingProvider
+        from codegraph_voyage.providers import FakeEmbeddingProvider
         return FakeEmbeddingProvider(dimensions=dims, model=name)
 
     def test_open_and_close(self):
-        from tools.codegraph_voyage.sidecar import SidecarDB
+        from codegraph_voyage.sidecar import SidecarDB
         db = SidecarDB(self.db_path)
         db.open()
         self.assertIsNotNone(db.conn)
@@ -469,7 +469,7 @@ class TestSidecarDB(unittest.TestCase):
             db.conn
 
     def test_store_and_retrieve(self):
-        from tools.codegraph_voyage.sidecar import SidecarDB
+        from codegraph_voyage.sidecar import SidecarDB
         provider = self._make_provider(dims=3)
         db = SidecarDB(self.db_path)
         db.open()
@@ -504,7 +504,7 @@ class TestSidecarDB(unittest.TestCase):
             db.close()
 
     def test_replace_existing(self):
-        from tools.codegraph_voyage.sidecar import SidecarDB
+        from codegraph_voyage.sidecar import SidecarDB
         provider = self._make_provider(dims=3)
         db = SidecarDB(self.db_path)
         db.open()
@@ -542,7 +542,7 @@ class TestSidecarDB(unittest.TestCase):
             db.close()
 
     def test_find_changed_nodes(self):
-        from tools.codegraph_voyage.sidecar import SidecarDB
+        from codegraph_voyage.sidecar import SidecarDB
         provider = self._make_provider(dims=2)
         db = SidecarDB(self.db_path)
         db.open()
@@ -580,7 +580,7 @@ class TestSidecarDB(unittest.TestCase):
             db.close()
 
     def test_remove_stale_records(self):
-        from tools.codegraph_voyage.sidecar import SidecarDB
+        from codegraph_voyage.sidecar import SidecarDB
         provider = self._make_provider(dims=1)
         db = SidecarDB(self.db_path)
         db.open()
@@ -625,7 +625,7 @@ class TestSidecarDB(unittest.TestCase):
             db.close()
 
     def test_empty_current_set_removes_all_for_provider(self):
-        from tools.codegraph_voyage.sidecar import SidecarDB
+        from codegraph_voyage.sidecar import SidecarDB
         provider = self._make_provider(dims=1)
         db = SidecarDB(self.db_path)
         db.open()
@@ -642,7 +642,7 @@ class TestSidecarDB(unittest.TestCase):
             db.close()
 
     def test_dimension_mismatch_is_atomic(self):
-        from tools.codegraph_voyage.sidecar import SidecarDB, SidecarError
+        from codegraph_voyage.sidecar import SidecarDB, SidecarError
         provider = self._make_provider(dims=2)
         db = SidecarDB(self.db_path)
         db.open()
@@ -659,8 +659,8 @@ class TestSidecarDB(unittest.TestCase):
 
     def test_model_incompatibility(self):
         """Different model/dimensions are segregated."""
-        from tools.codegraph_voyage.sidecar import SidecarDB
-        from tools.codegraph_voyage.providers import FakeEmbeddingProvider
+        from codegraph_voyage.sidecar import SidecarDB
+        from codegraph_voyage.providers import FakeEmbeddingProvider
         provider_a = FakeEmbeddingProvider(dimensions=4, model="fake-model-a")
         provider_b = FakeEmbeddingProvider(dimensions=4, model="fake-model-b")
         db = SidecarDB(self.db_path)
@@ -689,7 +689,7 @@ class TestSidecarDB(unittest.TestCase):
             db.close()
 
     def test_clear(self):
-        from tools.codegraph_voyage.sidecar import SidecarDB
+        from codegraph_voyage.sidecar import SidecarDB
         provider = self._make_provider(dims=1)
         db = SidecarDB(self.db_path)
         db.open()
@@ -738,7 +738,7 @@ class TestRanking(unittest.TestCase):
         }
 
     def test_pinned_exact_name(self):
-        from tools.codegraph_voyage.ranking import find_pinned_candidates
+        from codegraph_voyage.ranking import find_pinned_candidates
         candidates = [
             self._make_doc("n1", name="AuthService", qname="app.AuthService"),
             self._make_doc("n2", name="UserModel", qname="app.UserModel"),
@@ -754,7 +754,7 @@ class TestRanking(unittest.TestCase):
         self.assertEqual([p.node_id for p in deduped], ["n1"])
 
     def test_pinned_path_match(self):
-        from tools.codegraph_voyage.ranking import find_pinned_candidates
+        from codegraph_voyage.ranking import find_pinned_candidates
         candidates = [
             self._make_doc("n1", name="f1", fpath="src/auth/login.py"),
             self._make_doc("n2", name="f2", fpath="src/utils/helper.py"),
@@ -768,7 +768,7 @@ class TestRanking(unittest.TestCase):
         self.assertIn("exact_path", exact_path[0].provenance)
 
     def test_pinned_partial_qname(self):
-        from tools.codegraph_voyage.ranking import find_pinned_candidates
+        from codegraph_voyage.ranking import find_pinned_candidates
         candidates = [
             self._make_doc("n1", qname="app.services.auth.AuthService"),
             self._make_doc("n2", qname="app.models.User"),
@@ -776,14 +776,14 @@ class TestRanking(unittest.TestCase):
         self.assertEqual(find_pinned_candidates("auth service", candidates), [])
 
     def test_pinning_rejects_empty_and_substring_queries(self):
-        from tools.codegraph_voyage.ranking import find_pinned_candidates
+        from codegraph_voyage.ranking import find_pinned_candidates
         candidates = [self._make_doc("n1", name="Alpha", fpath="src/data.py")]
         self.assertEqual(find_pinned_candidates("", candidates), [])
         self.assertEqual(find_pinned_candidates("   ", candidates), [])
         self.assertEqual(find_pinned_candidates("a", candidates), [])
 
     def test_cosine_similarity(self):
-        from tools.codegraph_voyage.ranking import cosine_similarity
+        from codegraph_voyage.ranking import cosine_similarity
         self.assertAlmostEqual(cosine_similarity([1, 0], [1, 0]), 1.0)
         self.assertAlmostEqual(cosine_similarity([1, 0], [0, 1]), 0.0)
         self.assertAlmostEqual(cosine_similarity([1, 1], [1, 1]), 1.0)
@@ -791,7 +791,7 @@ class TestRanking(unittest.TestCase):
         self.assertEqual(cosine_similarity([0, 0], [0, 0]), 0.0)
 
     def test_rank_by_vector_similarity(self):
-        from tools.codegraph_voyage.ranking import rank_by_vector_similarity
+        from codegraph_voyage.ranking import rank_by_vector_similarity
         qv = [1.0, 0.0, 0.0, 0.0]
         candidates = [
             self._make_doc("n1", embedding=[0.9, 0.1, 0.0, 0.0]),
@@ -804,7 +804,7 @@ class TestRanking(unittest.TestCase):
         self.assertGreater(results[0].vector_score, results[1].vector_score)
 
     def test_rank_by_lexical_similarity(self):
-        from tools.codegraph_voyage.ranking import rank_by_lexical_similarity
+        from codegraph_voyage.ranking import rank_by_lexical_similarity
         candidates = [
             self._make_doc("n1", name="a", doc_text="auth service login handler"),
             self._make_doc("n2", name="b", doc_text="user model data access"),
@@ -814,7 +814,7 @@ class TestRanking(unittest.TestCase):
         self.assertEqual(results[0].node_id, "n1")
 
     def test_reciprocal_rank_fusion(self):
-        from tools.codegraph_voyage.ranking import (
+        from codegraph_voyage.ranking import (
             reciprocal_rank_fusion, RankingResult,
         )
         list_a = [
@@ -833,7 +833,7 @@ class TestRanking(unittest.TestCase):
         self.assertIn("lexical", fused[0].provenance)
 
     def test_hybrid_search_pinned(self):
-        from tools.codegraph_voyage.ranking import hybrid_search
+        from codegraph_voyage.ranking import hybrid_search
         qv = [1.0, 0.0, 0.0, 0.0]
         vector_candidates = [
             self._make_doc("n1", name="AuthService", embedding=[0.9, 0.0, 0.0, 0.0]),
@@ -847,7 +847,7 @@ class TestRanking(unittest.TestCase):
         self.assertTrue(results[0].is_pinned)
 
     def test_merge_pinned_into_results(self):
-        from tools.codegraph_voyage.ranking import merge_pinned_into_results, RankingResult
+        from codegraph_voyage.ranking import merge_pinned_into_results, RankingResult
         pinned = [
             RankingResult(node_id="n1", score=10.0, is_pinned=True, exact_score=10.0),
             RankingResult(node_id="n2", score=5.0, is_pinned=True, exact_score=5.0),
@@ -868,7 +868,7 @@ class TestRanking(unittest.TestCase):
         self.assertIn("vector", merged[0].provenance)
 
     def test_ranking_result_to_dict(self):
-        from tools.codegraph_voyage.ranking import RankingResult
+        from codegraph_voyage.ranking import RankingResult
         r = RankingResult(
             node_id="n1", score=0.5, is_pinned=True,
             lexical_score=0.3, vector_score=0.2,
@@ -888,8 +888,8 @@ class TestExplore(unittest.TestCase):
     """build_explore_query and codegraph_explore (dry-run)."""
 
     def test_build_explore_query(self):
-        from tools.codegraph_voyage.ranking import RankingResult
-        from tools.codegraph_voyage.explore import build_explore_query
+        from codegraph_voyage.ranking import RankingResult
+        from codegraph_voyage.explore import build_explore_query
         candidates = [
             RankingResult(node_id="n1", name="hello", qualified_name="mod.hello", file_path="src/a.py"),
             RankingResult(node_id="n2", name="world", qualified_name="mod.world", file_path="src/b.py"),
@@ -899,8 +899,8 @@ class TestExplore(unittest.TestCase):
         self.assertIn("mod.world", q)
 
     def test_codegraph_explore_dry_run(self):
-        from tools.codegraph_voyage.ranking import RankingResult
-        from tools.codegraph_voyage.explore import codegraph_explore
+        from codegraph_voyage.ranking import RankingResult
+        from codegraph_voyage.explore import codegraph_explore
         candidates = [
             RankingResult(node_id="n1", name="hello", qualified_name="mod.hello"),
         ]
@@ -909,8 +909,8 @@ class TestExplore(unittest.TestCase):
         self.assertIn("codegraph explore", result["command"])
 
     def test_codegraph_explore_fake_executable(self):
-        from tools.codegraph_voyage.ranking import RankingResult
-        from tools.codegraph_voyage.explore import codegraph_explore
+        from codegraph_voyage.ranking import RankingResult
+        from codegraph_voyage.explore import codegraph_explore
         with tempfile.TemporaryDirectory() as tmp:
             fake = Path(tmp) / "fake-codegraph"
             fake.write_text("#!/bin/sh\nprintf 'FAKE_EXPLORE:%s\\n' \"$*\"\n")
@@ -926,7 +926,7 @@ class TestExplore(unittest.TestCase):
             self.assertIn("app.AuthService", result["stdout"])
 
     def test_codegraph_explore_no_candidates(self):
-        from tools.codegraph_voyage.explore import codegraph_explore
+        from codegraph_voyage.explore import codegraph_explore
         result = codegraph_explore([], project_path="/tmp")
         self.assertEqual(result["returncode"], 1)
         self.assertEqual(result["error"], "No candidates")
@@ -941,7 +941,7 @@ class TestCLI(unittest.TestCase):
 
     def test_missing_voyage_key_fails_actionably(self):
         import argparse
-        from tools.codegraph_voyage.cli import _make_provider
+        from codegraph_voyage.cli import _make_provider
         args = argparse.Namespace(provider="voyage", model="voyage-code-4", dimensions=16)
         with mock.patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(ValueError, "VOYAGE_API_KEY"):
@@ -949,9 +949,9 @@ class TestCLI(unittest.TestCase):
 
     def test_search_rejects_incompatible_sidecar_model(self):
         import argparse
-        from tools.codegraph_voyage.cli import cmd_search
-        from tools.codegraph_voyage.providers import FakeEmbeddingProvider
-        from tools.codegraph_voyage.sidecar import SidecarDB
+        from codegraph_voyage.cli import cmd_search
+        from codegraph_voyage.providers import FakeEmbeddingProvider
+        from codegraph_voyage.sidecar import SidecarDB
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             graph_dir = root / ".codegraph"
@@ -974,7 +974,7 @@ class TestCLI(unittest.TestCase):
             )
             stderr = io.StringIO()
             with mock.patch(
-                "tools.codegraph_voyage.cli.build_documents_from_db", return_value=[]
+                "codegraph_voyage.cli.build_documents_from_db", return_value=[]
             ), mock.patch("sys.stderr", stderr):
                 rc = cmd_search(args)
             self.assertEqual(rc, 2)
@@ -983,8 +983,8 @@ class TestCLI(unittest.TestCase):
 
     def test_search_json_stdout_is_parseable_list(self):
         import argparse
-        from tools.codegraph_voyage.cli import cmd_search
-        from tools.codegraph_voyage.sidecar import SidecarDB
+        from codegraph_voyage.cli import cmd_search
+        from codegraph_voyage.sidecar import SidecarDB
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             graph_dir = root / ".codegraph"
@@ -1001,7 +1001,7 @@ class TestCLI(unittest.TestCase):
             )
             stdout = io.StringIO()
             with mock.patch(
-                "tools.codegraph_voyage.cli.build_documents_from_db", return_value=[]
+                "codegraph_voyage.cli.build_documents_from_db", return_value=[]
             ), mock.patch("sys.stdout", stdout):
                 rc = cmd_search(args)
             self.assertEqual(rc, 0)
@@ -1009,9 +1009,9 @@ class TestCLI(unittest.TestCase):
 
     def _assert_failed_index_preserves_sidecar(self, urlopen_side_effect=None, response=None):
         import argparse
-        from tools.codegraph_voyage.cli import cmd_index
-        from tools.codegraph_voyage.providers import FakeEmbeddingProvider, VoyageEmbeddingProvider
-        from tools.codegraph_voyage.sidecar import SidecarDB
+        from codegraph_voyage.cli import cmd_index
+        from codegraph_voyage.providers import FakeEmbeddingProvider, VoyageEmbeddingProvider
+        from codegraph_voyage.sidecar import SidecarDB
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             graph_dir = root / ".codegraph"
@@ -1050,9 +1050,9 @@ class TestCLI(unittest.TestCase):
                 mocked_urlopen.return_value.__enter__.return_value.read.return_value = response
             try:
                 with mock.patch(
-                    "tools.codegraph_voyage.cli._make_provider_or_report", return_value=provider
+                    "codegraph_voyage.cli._make_provider_or_report", return_value=provider
                 ), mock.patch(
-                    "tools.codegraph_voyage.cli.build_documents_from_db", return_value=[doc]
+                    "codegraph_voyage.cli.build_documents_from_db", return_value=[doc]
                 ), mock.patch("sys.stderr", stderr):
                     rc = cmd_index(args)
             finally:
@@ -1082,7 +1082,7 @@ class TestCLI(unittest.TestCase):
         self.assertIn("response validation failed", stderr)
 
     def test_parser_accepts_commands(self):
-        from tools.codegraph_voyage.cli import _build_parser
+        from codegraph_voyage.cli import _build_parser
         ap = _build_parser()
         # Check commands are registered (--help exits, so catch SystemExit)
         for cmd in ["index", "search", "status", "explore"]:
@@ -1090,7 +1090,7 @@ class TestCLI(unittest.TestCase):
             self.assertIn(cmd, sub.choices)
 
     def test_help_prints(self):
-        from tools.codegraph_voyage.cli import main
+        from codegraph_voyage.cli import main
         # --help on the main parser exits with code 0; catch SystemExit
         with self.assertRaises(SystemExit) as ctx:
             main(["--help"])
@@ -1105,7 +1105,7 @@ class TestSanitizeModule(unittest.TestCase):
     """Module-level exports."""
 
     def test_excluded_path_patterns(self):
-        from tools.codegraph_voyage.sanitize import EXCLUDED_PATH_PATTERNS
+        from codegraph_voyage.sanitize import EXCLUDED_PATH_PATTERNS
         self.assertIsInstance(EXCLUDED_PATH_PATTERNS, list)
         self.assertTrue(len(EXCLUDED_PATH_PATTERNS) > 0)
 
