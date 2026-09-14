@@ -197,6 +197,27 @@ and that fusion can improve over the worst single strategy.
 python -m codegraph_voyage.tests.test_all
 ```
 
+## Publishing
+
+Publishing a GitHub release runs `.github/workflows/python-publish.yml` to
+build and validate the wheel and source distribution, then upload both to
+PyPI using trusted publishing (no API token).
+
+Before the first release, configure a [PyPI trusted publisher](https://docs.pypi.org/trusted-publishers/):
+
+- PyPI project: `codegraph-voyage`
+- GitHub owner: `delorenj`
+- Repository: `codegraph-voyage`
+- Workflow filename: `python-publish.yml`
+- Environment: `pypi`
+
+For a new PyPI project, add a pending publisher at
+<https://pypi.org/manage/account/publishing/>. For an existing project, use
+its Publishing settings. Set a new version in `pyproject.toml`, update
+`uv.lock` with `uv lock`, commit and push, then publish a GitHub release
+with a matching tag (for example, `v0.1.0`). Each PyPI version can only be
+uploaded once.
+
 ## Limitations
 
 - **Small corpus**: Real-world benefit requires hundreds of indexed symbols.
