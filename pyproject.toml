@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codegraph-voyage"
+version = "0.1.0"
+description = "Hybrid semantic retrieval sidecar for CodeGraph"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Jarad", email = "delorenj@delo.sh" }
+]
+dependencies = []
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.0.0"]
+
+[project.scripts]
+codegraph-voyage = "codegraph_voyage.cli:main"
+codegraph-voyage-mcp = "codegraph_voyage.mcp_server:main"
