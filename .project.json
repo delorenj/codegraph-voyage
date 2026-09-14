@@ -1,0 +1,27 @@
+{
+  "project_name": "codegraph-voyage",
+  "project_description": "",
+  "project_slug": "codegraph-voyage",
+  "repo_path": "/home/delorenj/code/codegraph-voyage",
+  "ticket_provider": {
+    "type": "plane",
+    "workspace": "33god",
+    "identifier": "CODE",
+    "board_id": "",
+    "state": "planned"
+  },
+  "agents": {},
+  "automation": {
+    "reconcile": {
+      "enabled": false,
+      "grace_hours": 0,
+      "auto_review": true
+    }
+  },
+  "notebook": {
+    "binding": {
+      "state": "planned",
+      "notebook_name": "codegraph-voyage"
+    }
+  }
+}

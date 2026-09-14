@@ -1,0 +1,8 @@
+# CommonProject repository contract
+.env
+.env.*
+!.env.op
+/.agents/local.json
+
+# Canonical agent config lives in .agents; generated skill projections stay local.
+/.agents/skills

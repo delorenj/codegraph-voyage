@@ -1,0 +1,48 @@
+# Automated pull-request review for codegraph-voyage.
+#
+# Rendered unconditionally by the CommonProject template: every project pjangler
+# creates gets code review on day one, with no opt-in question to forget.
+#
+# Auth: the `CLAUDE_CODE_OAUTH_TOKEN` repo secret (or an org-level secret this
+# repo inherits). It is a long-lived OAuth/session token, NOT a metered API key.
+# Until it is set the job runs and fails at the action step — see the "Code
+# Review" section of the CommonProject README.
+#
+# Trigger: `pull_request`, deliberately NOT `pull_request_target`. The latter
+# would hand repo secrets to code from forked PRs; nothing here needs it.
+#
+# NOTE FOR TEMPLATE MAINTAINERS: this is a Copier `.jinja` file and GitHub
+# Actions expression syntax collides with Jinja's variable delimiters. Every
+# GitHub expression below is wrapped in a Jinja raw block so it reaches the
+# generated repo verbatim instead of rendering to an empty string.
+name: Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
+          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
+          # or https://code.claude.com/docs/en/cli-reference for available options
