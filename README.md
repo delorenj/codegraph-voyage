@@ -90,11 +90,11 @@ Incremental: only changed/new documents are re-embedded. Stale records are
 removed.
 
 ```bash
-# Index with fake provider (no API key, for testing)
+# Index with Voyage (requires VOYAGE_API_KEY)
 codegraph-voyage index
 
-# Index with voyage-code-4
-VOYAGE_API_KEY="paas-..." codegraph-voyage index --provider voyage
+# Initialize the embedding index (alias for index)
+codegraph-voyage init
 
 # Index only functions and classes
 codegraph-voyage index --kind "function,class"
@@ -156,23 +156,27 @@ standard for multi-word CLI package names).
 
 ## Offline / fake mode
 
-By default, the provider is `fake`, which produces deterministic embeddings
-from text content. No API key or network access is needed. The fake provider
-is suitable for development, testing, and CI.
+The `fake` provider produces deterministic test vectors, not semantic
+embeddings. It requires explicit selection for development, testing, and CI.
+There is no automatic fallback to fake embeddings.
 
 ```bash
-codegraph-voyage index                   # uses fake by default
-codegraph-voyage index --provider fake   # explicit
+codegraph-voyage index --provider fake
 ```
 
-## Real Voyage AI (opt-in)
+## Voyage AI (default)
 
-Set `VOYAGE_API_KEY` in your environment and pass `--provider voyage`:
+Voyage is the default for all embedding commands and the provider factory.
+Set `VOYAGE_API_KEY` in your environment, for example from 1Password:
 
 ```bash
-export VOYAGE_API_KEY="paas-..."
-codegraph-voyage index --provider voyage
+export VOYAGE_API_KEY="$(op read 'op://DeLoSecrets/Voyage AI/API Key')"
+codegraph-voyage init
 ```
+
+`init` and `index` fail with a nonzero exit code if credentials are missing or
+Voyage embedding requests fail. Failed requests leave existing embeddings
+unchanged; they never generate fake embeddings instead.
 
 The API key is **never** accepted via CLI flags to prevent secret leakage
 through process listings or shell history.

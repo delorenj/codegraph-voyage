@@ -43,7 +43,7 @@ from .sidecar import SidecarDB, SidecarError
 
 DEFAULT_CODEGRAPH_DIR = ".codegraph"
 DEFAULT_SIDECAR_NAME = "codegraph-voyage.db"
-DEFAULT_PROVIDER = "fake"
+DEFAULT_PROVIDER = "voyage"
 DEFAULT_MODEL = "voyage-code-4"
 DEFAULT_DIMENSIONS = 512
 
@@ -525,11 +525,11 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:
-              # Index with fake provider (no API key needed)
+              # Index with Voyage (requires VOYAGE_API_KEY)
               codegraph-voyage index
 
-              # Index with voyage-code-4
-              VOYAGE_API_KEY=... codegraph-voyage index --provider voyage
+              # Explicit offline test embeddings
+              codegraph-voyage index --provider fake
 
               # Search (hybrid lexical + vector)
               codegraph-voyage search "AuthService" --top-k 10
@@ -554,7 +554,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--provider",
         default=DEFAULT_PROVIDER,
         choices=["fake", "voyage"],
-        help=f"Embedding provider (default: {DEFAULT_PROVIDER})",
+        help=f"Embedding provider (default: {DEFAULT_PROVIDER}; fake is for explicit offline testing only)",
     )
     common.add_argument(
         "--model",
@@ -571,7 +571,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = ap.add_subparsers(dest="command", required=True)
 
     # index
-    p_index = sub.add_parser("index", help="Build documents and store embeddings", parents=[common])
+    p_index = sub.add_parser("index", aliases=["init"],
+                             help="Build documents and store embeddings", parents=[common])
     p_index.add_argument(
         "--no-source", action="store_true",
         help="Exclude source lines from documents",

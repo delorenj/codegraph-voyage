@@ -8,6 +8,8 @@ import io
 import email.message
 import os
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 import urllib.error
@@ -939,6 +941,79 @@ class TestExplore(unittest.TestCase):
 class TestCLI(unittest.TestCase):
     """CLI argument parsing and command dispatch."""
 
+    def test_embedding_commands_default_to_voyage(self):
+        from codegraph_voyage.cli import _build_parser
+        parser = _build_parser()
+        for argv in (["init"], ["index"], ["search", "query"],
+                     ["semantic_candidates", "query"], ["explore", "query"]):
+            with self.subTest(argv=argv):
+                self.assertEqual(parser.parse_args(argv).provider, "voyage")
+
+    def test_factory_defaults_to_voyage_and_requires_credentials(self):
+        from codegraph_voyage.providers import create_provider, VoyageEmbeddingProvider
+        for key in ("", "   "):
+            with self.subTest(key=key), mock.patch.dict(
+                os.environ, {"VOYAGE_API_KEY": key}, clear=True
+            ):
+                with self.assertRaisesRegex(ValueError, "VOYAGE_API_KEY"):
+                    create_provider()
+        with mock.patch.dict(os.environ, {"VOYAGE_API_KEY": "test-key"}, clear=True):
+            self.assertIsInstance(create_provider(), VoyageEmbeddingProvider)
+
+    def test_initialization_without_credentials_exits_before_creating_sidecar(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            graph_dir = Path(tmp) / ".codegraph"
+            graph_dir.mkdir()
+            (graph_dir / "codegraph.db").touch()
+            env = {k: v for k, v in os.environ.items() if k != "VOYAGE_API_KEY"}
+            for command in ("init", "index"):
+                with self.subTest(command=command):
+                    result = subprocess.run(
+                        [sys.executable, "-m", "codegraph_voyage", command, "--project", tmp],
+                        env=env, capture_output=True, text=True, check=False,
+                    )
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn("VOYAGE_API_KEY", result.stderr)
+                    self.assertNotIn("fake", result.stdout)
+                    self.assertFalse((graph_dir / "codegraph-voyage.db").exists())
+
+    def test_init_stores_voyage_vectors_by_default_and_fake_only_explicitly(self):
+        from codegraph_voyage.cli import main
+        from codegraph_voyage.sidecar import SidecarDB
+        for options, model in (([], "voyage-code-4"),
+                               (["--provider", "fake"], "fake-embedding-v1")):
+            with self.subTest(options=options), tempfile.TemporaryDirectory() as tmp:
+                graph_dir = Path(tmp) / ".codegraph"
+                graph_dir.mkdir()
+                (graph_dir / "codegraph.db").touch()
+                doc = {
+                    "node_id": "n1", "document": "def hello(): pass",
+                    "node_kind": "function", "name": "hello", "qualified_name": "hello",
+                    "file_path": "hello.py", "language": "python", "start_line": 1,
+                    "end_line": 1,
+                }
+                with mock.patch.dict(os.environ, {
+                    "VOYAGE_API_KEY": "test-key" if not options else "",
+                }, clear=True), mock.patch(
+                    "codegraph_voyage.cli.build_documents_from_db", return_value=[doc]
+                ), mock.patch("urllib.request.urlopen") as request, mock.patch("sys.stdout", io.StringIO()):
+                    request.return_value.__enter__.return_value.read.return_value = json.dumps({
+                        "data": [{"index": 0, "embedding": [0.1, 0.2]}],
+                    }).encode()
+                    rc = main(["init", "--project", tmp, "--dimensions", "2", *options])
+                self.assertEqual(rc, 0)
+                if options:
+                    request.assert_not_called()
+                else:
+                    request.assert_called_once()
+                    self.assertEqual(json.loads(request.call_args.args[0].data)["model"], model)
+                sidecar = SidecarDB(graph_dir / "codegraph-voyage.db")
+                sidecar.open()
+                try:
+                    self.assertEqual(sidecar.get_status()["model_groups"], [[model, 2, "float32", 1]])
+                finally:
+                    sidecar.close()
+
     def test_missing_voyage_key_fails_actionably(self):
         import argparse
         from codegraph_voyage.cli import _make_provider
@@ -1008,9 +1083,8 @@ class TestCLI(unittest.TestCase):
             self.assertIsInstance(json.loads(stdout.getvalue()), list)
 
     def _assert_failed_index_preserves_sidecar(self, urlopen_side_effect=None, response=None):
-        import argparse
-        from codegraph_voyage.cli import cmd_index
-        from codegraph_voyage.providers import FakeEmbeddingProvider, VoyageEmbeddingProvider
+        from codegraph_voyage.cli import main
+        from codegraph_voyage.providers import FakeEmbeddingProvider
         from codegraph_voyage.sidecar import SidecarDB
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1036,11 +1110,6 @@ class TestCLI(unittest.TestCase):
                 "file_path": "src/new.py", "language": "python", "start_line": 1,
                 "end_line": 1,
             }
-            args = argparse.Namespace(
-                project=str(root), provider="voyage", model="voyage-code-4", dimensions=2,
-                no_source=False, max_source_lines=20, kind=None, file_filter=None,
-            )
-            provider = VoyageEmbeddingProvider(api_key="test-key", dimensions=2)
             stderr = io.StringIO()
             patcher = mock.patch("urllib.request.urlopen")
             mocked_urlopen = patcher.start()
@@ -1049,12 +1118,12 @@ class TestCLI(unittest.TestCase):
             else:
                 mocked_urlopen.return_value.__enter__.return_value.read.return_value = response
             try:
-                with mock.patch(
-                    "codegraph_voyage.cli._make_provider_or_report", return_value=provider
-                ), mock.patch(
+                with mock.patch.dict(os.environ, {"VOYAGE_API_KEY": "test-key"}), mock.patch(
                     "codegraph_voyage.cli.build_documents_from_db", return_value=[doc]
                 ), mock.patch("sys.stderr", stderr):
-                    rc = cmd_index(args)
+                    for command in ("init", "index"):
+                        rc = main([command, "--project", str(root), "--dimensions", "2"])
+                        self.assertEqual(rc, 2)
             finally:
                 patcher.stop()
             sidecar.open()
@@ -1081,11 +1150,17 @@ class TestCLI(unittest.TestCase):
         )
         self.assertIn("response validation failed", stderr)
 
+    def test_index_connection_failure_is_atomic(self):
+        stderr = self._assert_failed_index_preserves_sidecar(
+            urlopen_side_effect=urllib.error.URLError("connection refused")
+        )
+        self.assertIn("connection error", stderr)
+
     def test_parser_accepts_commands(self):
         from codegraph_voyage.cli import _build_parser
         ap = _build_parser()
         # Check commands are registered (--help exits, so catch SystemExit)
-        for cmd in ["index", "search", "status", "explore"]:
+        for cmd in ["init", "index", "search", "status", "explore"]:
             sub = ap._subparsers._group_actions[0]
             self.assertIn(cmd, sub.choices)
 

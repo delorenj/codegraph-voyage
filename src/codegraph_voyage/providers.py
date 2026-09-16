@@ -79,7 +79,7 @@ class VoyageEmbeddingProvider(EmbeddingProvider):
     ):
         if not api_key:
             api_key = os.environ.get("VOYAGE_API_KEY", "")
-        if not api_key:
+        if not api_key or not api_key.strip():
             raise ValueError(
                 "VOYAGE_API_KEY is required. Set the environment variable or pass api_key."
             )
@@ -255,7 +255,7 @@ class FakeEmbeddingProvider(EmbeddingProvider):
 
 
 def create_provider(
-    provider_name: str = "fake",
+    provider_name: str = "voyage",
     *,
     api_key: str | None = None,
     model: str | None = None,
@@ -263,7 +263,8 @@ def create_provider(
 ) -> EmbeddingProvider:
     """Factory: create an embedding provider by name.
 
-    Supported names: 'voyage', 'fake'.
+    Defaults to Voyage and fails if credentials are unavailable.
+    The 'fake' provider requires explicit selection for offline testing.
     """
     if provider_name == "voyage":
         return VoyageEmbeddingProvider(
