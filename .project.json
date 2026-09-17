@@ -11,13 +11,6 @@
     "identifier_source": "proposed"
   },
   "agents": {},
-  "automation": {
-    "reconcile": {
-      "enabled": false,
-      "grace_hours": 0,
-      "auto_review": true
-    }
-  },
   "notebook": {
     "binding": {
       "state": "planned",
