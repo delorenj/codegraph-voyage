@@ -164,9 +164,21 @@ There is no automatic fallback to fake embeddings.
 codegraph-voyage index --provider fake
 ```
 
+## OpenRouter Provider
+
+`codegraph-voyage` supports OpenRouter's OpenAI-compatible embeddings API.
+Set `OPENROUTER_API_KEY` in your environment:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-..."
+codegraph-voyage index --provider openrouter --model "voyage-4"
+```
+
+You can choose any embedding model available on OpenRouter (e.g. `voyage-4`, `voyageai/voyage-code-4`, `openai/text-embedding-3-small`).
+
 ## Voyage AI (default)
 
-Voyage is the default for all embedding commands and the provider factory.
+Voyage is the built-in default provider when no configuration is present.
 Set `VOYAGE_API_KEY` in your environment, for example from 1Password:
 
 ```bash
@@ -175,11 +187,40 @@ codegraph-voyage init
 ```
 
 `init` and `index` fail with a nonzero exit code if credentials are missing or
-Voyage embedding requests fail. Failed requests leave existing embeddings
+embedding requests fail. Failed requests leave existing embeddings
 unchanged; they never generate fake embeddings instead.
 
 The API key is **never** accepted via CLI flags to prevent secret leakage
 through process listings or shell history.
+
+## Configuration file (TOML)
+
+You can set your default provider, model, and dimensions in a configuration file:
+- User-level XDG config: `~/.config/codegraph-voyage/config.toml` (or `$XDG_CONFIG_HOME/codegraph-voyage/config.toml`)
+- Project-level config: `.codegraph/config.toml` in your repository root
+- Custom config: pass `--config /path/to/config.toml` or set `CODEGRAPH_VOYAGE_CONFIG`
+
+Example `~/.config/codegraph-voyage/config.toml`:
+
+```toml
+provider = "openrouter"
+model = "voyage-4"
+dimensions = 512
+
+[openrouter]
+model = "voyage-4"
+dimensions = 512
+
+[voyage]
+model = "voyage-code-4"
+dimensions = 512
+```
+
+Configuration precedence (highest to lowest):
+1. CLI flags (`--provider`, `--model`, `--dimensions`)
+2. Project configuration (`<project>/.codegraph/config.toml`)
+3. User XDG configuration (`~/.config/codegraph-voyage/config.toml`)
+4. Built-in defaults (`voyage`, `voyage-code-4`, `512`)
 
 ## Benchmark
 

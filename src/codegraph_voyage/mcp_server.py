@@ -20,15 +20,24 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess:
     )
 
 @mcp.tool()
-def search_codebase(query: str, top_k: int = 10) -> str:
+def search_codebase(
+    query: str,
+    top_k: int = 10,
+    provider: str | None = None,
+    project_path: str | None = None,
+) -> str:
     """
     Perform a hybrid semantic search to find symbols in the codebase related to the query.
     This is extremely useful to pinpoint where specific features, concepts, or terms are implemented.
     Returns a JSON string of ranked results.
     """
     try:
-        # Default to voyage provider instead of fake
-        result = _run_cli("search", query, "--top-k", str(top_k), "--json", "--provider", "voyage")
+        args = ["search", query, "--top-k", str(top_k), "--json"]
+        if provider:
+            args.extend(["--provider", provider])
+        if project_path:
+            args.extend(["--project", project_path])
+        result = _run_cli(*args)
         if result.returncode != 0:
             return json.dumps({"error": result.stderr.strip()})
         return result.stdout.strip()
@@ -36,15 +45,24 @@ def search_codebase(query: str, top_k: int = 10) -> str:
         return json.dumps({"error": str(e)})
 
 @mcp.tool()
-def explore_codebase(query: str, max_files: int = 12) -> str:
+def explore_codebase(
+    query: str,
+    max_files: int = 12,
+    provider: str | None = None,
+    project_path: str | None = None,
+) -> str:
     """
     Perform a semantic search to find symbols related to the query, and then walk the dependency graph 
     (using `codegraph explore`) to gather the full codebase context around those symbols.
     Use this to get 'wide-sprawl' context for complex features or dependencies.
     """
     try:
-        # The explore command outputs text (not json currently) which is perfectly readable context
-        result = _run_cli("explore", query, "--max-files", str(max_files), "--provider", "voyage")
+        args = ["explore", query, "--max-files", str(max_files)]
+        if provider:
+            args.extend(["--provider", provider])
+        if project_path:
+            args.extend(["--project", project_path])
+        result = _run_cli(*args)
         if result.returncode != 0:
             return json.dumps({"error": result.stderr.strip()})
         return result.stdout.strip()
@@ -52,13 +70,22 @@ def explore_codebase(query: str, max_files: int = 12) -> str:
         return json.dumps({"error": str(e)})
 
 @mcp.tool()
-def index_codebase(kind: str = "function,class", file_filter: str = "") -> str:
+def index_codebase(
+    kind: str = "function,class",
+    file_filter: str = "",
+    provider: str | None = None,
+    project_path: str | None = None,
+) -> str:
     """
     Rebuild the codebase embedding index. 
     Call this if the codebase has changed significantly and you need fresh embeddings.
     """
     try:
-        args = ["index", "--provider", "voyage"]
+        args = ["index"]
+        if provider:
+            args.extend(["--provider", provider])
+        if project_path:
+            args.extend(["--project", project_path])
         if kind:
             args.extend(["--kind", kind])
         if file_filter:

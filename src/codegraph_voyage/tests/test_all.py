@@ -941,6 +941,18 @@ class TestExplore(unittest.TestCase):
 class TestCLI(unittest.TestCase):
     """CLI argument parsing and command dispatch."""
 
+    def setUp(self):
+        self.tmp_config_dir = tempfile.TemporaryDirectory()
+        self._orig_xdg = os.environ.get("XDG_CONFIG_HOME")
+        os.environ["XDG_CONFIG_HOME"] = self.tmp_config_dir.name
+
+    def tearDown(self):
+        if self._orig_xdg is not None:
+            os.environ["XDG_CONFIG_HOME"] = self._orig_xdg
+        else:
+            os.environ.pop("XDG_CONFIG_HOME", None)
+        self.tmp_config_dir.cleanup()
+
     def test_embedding_commands_default_to_voyage(self):
         from codegraph_voyage.cli import _build_parser
         parser = _build_parser()
@@ -966,6 +978,8 @@ class TestCLI(unittest.TestCase):
             graph_dir.mkdir()
             (graph_dir / "codegraph.db").touch()
             env = {k: v for k, v in os.environ.items() if k != "VOYAGE_API_KEY"}
+            env["XDG_CONFIG_HOME"] = tmp
+            env["PYTHONPATH"] = str(Path(__file__).resolve().parents[2])
             for command in ("init", "index"):
                 with self.subTest(command=command):
                     result = subprocess.run(
@@ -994,6 +1008,7 @@ class TestCLI(unittest.TestCase):
                 }
                 with mock.patch.dict(os.environ, {
                     "VOYAGE_API_KEY": "test-key" if not options else "",
+                    "XDG_CONFIG_HOME": self.tmp_config_dir.name,
                 }, clear=True), mock.patch(
                     "codegraph_voyage.cli.build_documents_from_db", return_value=[doc]
                 ), mock.patch("urllib.request.urlopen") as request, mock.patch("sys.stdout", io.StringIO()):
@@ -1183,6 +1198,277 @@ class TestSanitizeModule(unittest.TestCase):
         from codegraph_voyage.sanitize import EXCLUDED_PATH_PATTERNS
         self.assertIsInstance(EXCLUDED_PATH_PATTERNS, list)
         self.assertTrue(len(EXCLUDED_PATH_PATTERNS) > 0)
+
+
+# =========================================================================
+# OpenRouter Provider Tests
+# =========================================================================
+
+class TestOpenRouterProvider(unittest.TestCase):
+    """OpenRouterEmbeddingProvider unit tests."""
+
+    def test_openrouter_requires_api_key(self):
+        from codegraph_voyage.providers import OpenRouterEmbeddingProvider, create_provider
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "OPENROUTER_API_KEY"):
+                OpenRouterEmbeddingProvider()
+            with self.assertRaisesRegex(ValueError, "OPENROUTER_API_KEY"):
+                create_provider("openrouter")
+
+    def test_openrouter_factory_and_properties(self):
+        from codegraph_voyage.providers import OpenRouterEmbeddingProvider, create_provider
+        provider = create_provider(
+            "openrouter",
+            api_key="test-key",
+            model="openai/text-embedding-3-small",
+            dimensions=256,
+        )
+        self.assertIsInstance(provider, OpenRouterEmbeddingProvider)
+        self.assertEqual(provider.model_name, "openai/text-embedding-3-small")
+        self.assertEqual(provider.dimensions, 256)
+
+    def test_openrouter_query_and_headers(self):
+        from codegraph_voyage.providers import OpenRouterEmbeddingProvider
+        provider = OpenRouterEmbeddingProvider(api_key="test-key", dimensions=2)
+        fake_response = json.dumps({
+            "object": "list",
+            "data": [{"index": 0, "embedding": [0.3, 0.7]}],
+            "model": "voyage-4",
+        }).encode("utf-8")
+
+        with mock.patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value.__enter__.return_value.read.return_value = fake_response
+            result = provider.embed_query("search term", input_type="query")
+            req = mock_urlopen.call_args[0][0]
+            payload = json.loads(req.data)
+
+            self.assertEqual(payload["model"], "voyage-4")
+            self.assertEqual(payload["input"], ["search term"])
+            self.assertEqual(payload["dimensions"], 2)
+            self.assertEqual(payload["input_type"], "query")
+            self.assertEqual(req.headers["Authorization"], "Bearer test-key")
+            self.assertEqual(req.headers["Http-referer"], "https://github.com/delorenj/codegraph-voyage")
+            self.assertEqual(req.headers["X-title"], "codegraph-voyage")
+            self.assertEqual(result, [0.3, 0.7])
+
+    def test_openrouter_empty_texts(self):
+        from codegraph_voyage.providers import OpenRouterEmbeddingProvider
+        provider = OpenRouterEmbeddingProvider(api_key="test-key")
+        with mock.patch("urllib.request.urlopen") as mock_urlopen:
+            result = provider.embed_documents(["", "  "])
+            mock_urlopen.assert_not_called()
+            self.assertEqual(result, [[], []])
+
+    def test_openrouter_mixed_empty_and_valid(self):
+        from codegraph_voyage.providers import OpenRouterEmbeddingProvider
+        provider = OpenRouterEmbeddingProvider(api_key="test-key", dimensions=3)
+        fake_response = json.dumps({
+            "data": [
+                {"index": 0, "embedding": [0.1, 0.2, 0.3]},
+                {"index": 1, "embedding": [0.4, 0.5, 0.6]},
+            ]
+        }).encode("utf-8")
+
+        with mock.patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value.__enter__.return_value.read.return_value = fake_response
+            result = provider.embed_documents(["first", "   ", "second"])
+            payload = json.loads(mock_urlopen.call_args[0][0].data)
+            self.assertEqual(payload["input"], ["first", "second"])
+            self.assertEqual(len(result), 3)
+            self.assertEqual(result[0], [0.1, 0.2, 0.3])
+            self.assertEqual(result[1], [])
+            self.assertEqual(result[2], [0.4, 0.5, 0.6])
+
+    def test_openrouter_http_error_includes_message(self):
+        from codegraph_voyage.providers import OpenRouterEmbeddingProvider
+        provider = OpenRouterEmbeddingProvider(api_key="test-key")
+        err_body = json.dumps({
+            "error": {"message": "ZDR violation by account settings", "code": 404}
+        }).encode("utf-8")
+        fp = io.BytesIO(err_body)
+        error = urllib.error.HTTPError(
+            url="https://openrouter.ai/api/v1/embeddings",
+            code=404,
+            msg="Not Found",
+            hdrs=email.message.Message(),
+            fp=fp,
+        )
+
+        with mock.patch("urllib.request.urlopen", side_effect=error):
+            with self.assertRaises(RuntimeError) as ctx:
+                provider.embed_documents(["hello"])
+            self.assertIn("404", str(ctx.exception))
+            self.assertIn("ZDR violation", str(ctx.exception))
+
+    def test_openrouter_batching(self):
+        from codegraph_voyage.providers import OpenRouterEmbeddingProvider
+        provider = OpenRouterEmbeddingProvider(api_key="test-key", dimensions=2, batch_size=2)
+        def response_for(req, timeout=None):
+            inputs = json.loads(req.data)["input"]
+            resp = mock.MagicMock()
+            resp.__enter__.return_value.read.return_value = json.dumps({
+                "data": [{"index": i, "embedding": [1.0, 2.0]} for i in range(len(inputs))]
+            }).encode("utf-8")
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=response_for) as mocked:
+            res = provider.embed_documents(["a", "b", "c"])
+            self.assertEqual(mocked.call_count, 2)
+            self.assertEqual(len(res), 3)
+
+
+# =========================================================================
+# Config Module Tests
+# =========================================================================
+
+class TestConfigModule(unittest.TestCase):
+    """Tests for codegraph_voyage.config."""
+
+    def test_parse_simple_toml(self):
+        from codegraph_voyage.config import parse_simple_toml
+        toml_text = '''
+        # comments
+        provider = "openrouter"
+        model = "voyage-4"
+        dimensions = 512
+        enabled = true
+
+        [openrouter]
+        model = "voyage-4"
+        dimensions = 512
+
+        [voyage]
+        model = "voyage-code-4"
+        '''
+        data = parse_simple_toml(toml_text)
+        self.assertEqual(data["provider"], "openrouter")
+        self.assertEqual(data["model"], "voyage-4")
+        self.assertEqual(data["dimensions"], 512)
+        self.assertEqual(data["enabled"], True)
+        self.assertEqual(data["openrouter"]["model"], "voyage-4")
+        self.assertEqual(data["voyage"]["model"], "voyage-code-4")
+
+    def test_load_config_xdg_and_project_override(self):
+        from codegraph_voyage.config import load_config
+        with tempfile.TemporaryDirectory() as xdg_tmp, tempfile.TemporaryDirectory() as proj_tmp:
+            xdg_app_dir = Path(xdg_tmp) / "codegraph-voyage"
+            xdg_app_dir.mkdir()
+            (xdg_app_dir / "config.toml").write_text(
+                'provider = "openrouter"\nmodel = "voyage-4"\ndimensions = 512\n'
+            )
+
+            cg_dir = Path(proj_tmp) / ".codegraph"
+            cg_dir.mkdir()
+            (cg_dir / "config.toml").write_text(
+                'model = "openai/text-embedding-3-small"\n'
+            )
+
+            with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": xdg_tmp}):
+                cfg1 = load_config()
+                self.assertEqual(cfg1["provider"], "openrouter")
+                self.assertEqual(cfg1["model"], "voyage-4")
+
+                cfg2 = load_config(project_root=proj_tmp)
+                self.assertEqual(cfg2["provider"], "openrouter")
+                self.assertEqual(cfg2["model"], "openai/text-embedding-3-small")
+                self.assertEqual(cfg2["dimensions"], 512)
+
+    def test_load_config_explicit_path(self):
+        from codegraph_voyage.config import load_config
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
+            f.write('provider = "voyage"\nmodel = "voyage-code-4"\n')
+            f_path = f.name
+        try:
+            cfg = load_config(config_path=f_path)
+            self.assertEqual(cfg["provider"], "voyage")
+            self.assertEqual(cfg["model"], "voyage-code-4")
+        finally:
+            os.unlink(f_path)
+
+        with self.assertRaises(FileNotFoundError):
+            load_config(config_path="/nonexistent/path/config.toml")
+
+
+# =========================================================================
+# CLI with OpenRouter and Config Tests
+# =========================================================================
+
+class TestCLIOpenRouterAndConfig(unittest.TestCase):
+    """CLI tests with OpenRouter provider and config files."""
+
+    def test_cli_respects_xdg_config_openrouter(self):
+        from codegraph_voyage.cli import main
+        from codegraph_voyage.sidecar import SidecarDB
+        with tempfile.TemporaryDirectory() as xdg_tmp, tempfile.TemporaryDirectory() as proj_tmp:
+            xdg_app_dir = Path(xdg_tmp) / "codegraph-voyage"
+            xdg_app_dir.mkdir()
+            (xdg_app_dir / "config.toml").write_text(
+                'provider = "openrouter"\nmodel = "voyage-4"\ndimensions = 2\n'
+            )
+
+            graph_dir = Path(proj_tmp) / ".codegraph"
+            graph_dir.mkdir()
+            (graph_dir / "codegraph.db").touch()
+            doc = {
+                "node_id": "n1", "document": "def hello(): pass",
+                "node_kind": "function", "name": "hello", "qualified_name": "hello",
+                "file_path": "hello.py", "language": "python", "start_line": 1,
+                "end_line": 1,
+            }
+            with mock.patch.dict(os.environ, {
+                "OPENROUTER_API_KEY": "test-or-key",
+                "XDG_CONFIG_HOME": xdg_tmp,
+            }), mock.patch(
+                "codegraph_voyage.cli.build_documents_from_db", return_value=[doc]
+            ), mock.patch("urllib.request.urlopen") as request, mock.patch("sys.stdout", io.StringIO()):
+                request.return_value.__enter__.return_value.read.return_value = json.dumps({
+                    "data": [{"index": 0, "embedding": [0.1, 0.2]}],
+                }).encode()
+                rc = main(["init", "--project", proj_tmp])
+
+            self.assertEqual(rc, 0)
+            req = request.call_args[0][0]
+            payload = json.loads(req.data)
+            self.assertEqual(payload["model"], "voyage-4")
+            self.assertEqual(req.headers["Authorization"], "Bearer test-or-key")
+
+            sidecar = SidecarDB(graph_dir / "codegraph-voyage.db")
+            sidecar.open()
+            try:
+                self.assertEqual(sidecar.get_status()["model_groups"], [["voyage-4", 2, "float32", 1]])
+            finally:
+                sidecar.close()
+
+    def test_cli_explicit_provider_overrides_config(self):
+        from codegraph_voyage.cli import main
+        from codegraph_voyage.sidecar import SidecarDB
+        with tempfile.TemporaryDirectory() as xdg_tmp, tempfile.TemporaryDirectory() as proj_tmp:
+            xdg_app_dir = Path(xdg_tmp) / "codegraph-voyage"
+            xdg_app_dir.mkdir()
+            (xdg_app_dir / "config.toml").write_text('provider = "openrouter"\nmodel = "voyage-4"\n')
+
+            graph_dir = Path(proj_tmp) / ".codegraph"
+            graph_dir.mkdir()
+            (graph_dir / "codegraph.db").touch()
+            doc = {
+                "node_id": "n1", "document": "def hello(): pass",
+                "node_kind": "function", "name": "hello", "qualified_name": "hello",
+                "file_path": "hello.py", "language": "python", "start_line": 1,
+                "end_line": 1,
+            }
+            # Explicitly pass --provider fake
+            with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": xdg_tmp}), mock.patch(
+                "codegraph_voyage.cli.build_documents_from_db", return_value=[doc]
+            ), mock.patch("sys.stdout", io.StringIO()):
+                rc = main(["init", "--project", proj_tmp, "--provider", "fake", "--dimensions", "2"])
+            self.assertEqual(rc, 0)
+
+            sidecar = SidecarDB(graph_dir / "codegraph-voyage.db")
+            sidecar.open()
+            try:
+                self.assertEqual(sidecar.get_status()["model_groups"], [["fake-embedding-v1", 2, "float32", 1]])
+            finally:
+                sidecar.close()
 
 
 if __name__ == "__main__":

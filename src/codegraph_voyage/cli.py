@@ -26,10 +26,12 @@ from .document import (
     build_document_for_node_id,
     compute_content_hash,
 )
+from .config import load_config
 from .explore import codegraph_explore
 from .providers import (
     EmbeddingProvider,
     FakeEmbeddingProvider,
+    OpenRouterEmbeddingProvider,
     VoyageEmbeddingProvider,
     create_provider,
 )
@@ -70,22 +72,76 @@ def _sidecar_db_path(root: Path) -> Path:
 
 
 def _make_provider(args: argparse.Namespace) -> EmbeddingProvider:
-    """Create an embedding provider from CLI args.
+    """Create an embedding provider from CLI args and configuration.
 
-    The API key is read from the VOYAGE_API_KEY environment variable only;
-    no CLI flag accepts a secret value.
+    The API key is read from the VOYAGE_API_KEY or OPENROUTER_API_KEY
+    environment variable or configuration file; no CLI flag accepts a secret value.
     """
-    api_key = os.environ.get("VOYAGE_API_KEY", "")
-    if args.provider == "voyage" and not api_key:
-        raise ValueError(
-            "VOYAGE_API_KEY is required for voyage provider; "
-            "set the VOYAGE_API_KEY environment variable"
+    raw_provider = getattr(args, "provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER
+    provider = raw_provider.lower().replace("-", "_")
+
+    config = getattr(args, "_config", None) or {}
+    provider_config = (
+        config.get(provider, {})
+        if isinstance(config.get(provider), dict)
+        else {}
+    )
+
+    model = getattr(args, "model", None)
+    model_specified = getattr(args, "_model_specified", False)
+
+    if not model_specified:
+        if provider_config.get("model"):
+            model = provider_config["model"]
+        elif config.get("provider") == raw_provider and config.get("model"):
+            model = config["model"]
+        elif provider in ("openrouter", "open_router"):
+            model = os.environ.get("OPENROUTER_MODEL", "voyage-4")
+        elif provider == "voyage":
+            model = os.environ.get("VOYAGE_MODEL", DEFAULT_MODEL)
+        elif provider == "fake":
+            model = "fake-embedding-v1"
+
+    dimensions = getattr(args, "dimensions", None)
+    if dimensions is None:
+        dimensions = (
+            provider_config.get("dimensions")
+            or config.get("dimensions")
+            or DEFAULT_DIMENSIONS
         )
+
+    base_url = provider_config.get("base_url") or config.get("base_url")
+
+    api_key = ""
+    if provider == "voyage":
+        api_key = (
+            os.environ.get("VOYAGE_API_KEY", "")
+            or provider_config.get("api_key", "")
+            or config.get("api_key", "")
+        )
+        if not api_key or not api_key.strip():
+            raise ValueError(
+                "VOYAGE_API_KEY is required for voyage provider; "
+                "set the VOYAGE_API_KEY environment variable"
+            )
+    elif provider in ("openrouter", "open_router"):
+        api_key = (
+            os.environ.get("OPENROUTER_API_KEY", "")
+            or provider_config.get("api_key", "")
+            or config.get("api_key", "")
+        )
+        if not api_key or not api_key.strip():
+            raise ValueError(
+                "OPENROUTER_API_KEY is required for openrouter provider; "
+                "set the OPENROUTER_API_KEY environment variable"
+            )
+
     return create_provider(
-        args.provider,
+        provider,
         api_key=api_key,
-        model=args.model,
-        dimensions=args.dimensions,
+        model=model,
+        dimensions=dimensions,
+        base_url=base_url,
     )
 
 
@@ -519,7 +575,39 @@ def cmd_explore(args: argparse.Namespace) -> int:
     return result.get("returncode", 0)
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def _build_parser(config: dict[str, Any] | None = None) -> argparse.ArgumentParser:
+    config = config or {}
+    raw_provider_default = (
+        config.get("provider")
+        or os.environ.get("CODEGRAPH_PROVIDER")
+        or DEFAULT_PROVIDER
+    )
+    provider_default = raw_provider_default.lower().replace("-", "_")
+    provider_section = (
+        config.get(provider_default, {})
+        if isinstance(config.get(provider_default), dict)
+        else {}
+    )
+
+    if provider_section.get("model"):
+        model_default = provider_section["model"]
+    elif config.get("provider") == raw_provider_default and config.get("model"):
+        model_default = config["model"]
+    elif provider_default in ("openrouter", "open_router"):
+        model_default = os.environ.get("OPENROUTER_MODEL", "voyage-4")
+    elif provider_default == "voyage":
+        model_default = os.environ.get("VOYAGE_MODEL", DEFAULT_MODEL)
+    elif provider_default == "fake":
+        model_default = "fake-embedding-v1"
+    else:
+        model_default = config.get("model", DEFAULT_MODEL)
+
+    dim_default = (
+        provider_section.get("dimensions")
+        or config.get("dimensions")
+        or DEFAULT_DIMENSIONS
+    )
+
     ap = argparse.ArgumentParser(
         description="codegraph-voyage: hybrid semantic retrieval sidecar for CodeGraph",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -527,6 +615,9 @@ def _build_parser() -> argparse.ArgumentParser:
             Examples:
               # Index with Voyage (requires VOYAGE_API_KEY)
               codegraph-voyage index
+
+              # Index with OpenRouter (requires OPENROUTER_API_KEY)
+              codegraph-voyage index --provider openrouter
 
               # Explicit offline test embeddings
               codegraph-voyage index --provider fake
@@ -551,21 +642,26 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Project root path (default: current dir, walks up for .codegraph/)",
     )
     common.add_argument(
+        "--config",
+        default=None,
+        help="Path to toml configuration file (default: ~/.config/codegraph-voyage/config.toml or .codegraph/config.toml)",
+    )
+    common.add_argument(
         "--provider",
-        default=DEFAULT_PROVIDER,
-        choices=["fake", "voyage"],
-        help=f"Embedding provider (default: {DEFAULT_PROVIDER}; fake is for explicit offline testing only)",
+        default=provider_default,
+        choices=["fake", "voyage", "openrouter", "open_router"],
+        help=f"Embedding provider (default: {provider_default}; fake is for explicit offline testing only)",
     )
     common.add_argument(
         "--model",
-        default=DEFAULT_MODEL,
-        help=f"Embedding model name (default: {DEFAULT_MODEL})",
+        default=model_default,
+        help=f"Embedding model name (default: {model_default})",
     )
     common.add_argument(
         "--dimensions",
         type=int,
-        default=DEFAULT_DIMENSIONS,
-        help=f"Embedding dimensions (default: {DEFAULT_DIMENSIONS})",
+        default=dim_default,
+        help=f"Embedding dimensions (default: {dim_default})",
     )
 
     sub = ap.add_subparsers(dest="command", required=True)
@@ -680,8 +776,29 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = _build_parser()
-    args = ap.parse_args(argv)
+    args_list = list(sys.argv[1:] if argv is None else argv)
+
+    # Pre-parse --project and --config to locate configuration before building full parser
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("-p", "--project", default=None)
+    pre_parser.add_argument("--config", default=None)
+    known, _ = pre_parser.parse_known_args(args_list)
+
+    root = _resolve_project_root(known.project)
+    config = load_config(config_path=known.config, project_root=root)
+
+    ap = _build_parser(config=config)
+    args = ap.parse_args(args_list)
+
+    # Attach config and metadata to args for provider creation
+    args._config = config
+    args._model_specified = any(
+        arg == "--model" or arg.startswith("--model=") for arg in args_list
+    )
+    args._provider_specified = any(
+        arg == "--provider" or arg.startswith("--provider=") for arg in args_list
+    )
+
     if hasattr(args, "func"):
         return args.func(args)
     ap.print_help()
