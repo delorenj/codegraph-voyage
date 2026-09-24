@@ -29,6 +29,7 @@ from .document import (
 from .config import load_config
 from .explore import codegraph_explore
 from .providers import (
+    AutomaticAIEmbeddingProvider,
     EmbeddingProvider,
     FakeEmbeddingProvider,
     OpenRouterEmbeddingProvider,
@@ -95,6 +96,8 @@ def _make_provider(args: argparse.Namespace) -> EmbeddingProvider:
             model = provider_config["model"]
         elif config.get("provider") == raw_provider and config.get("model"):
             model = config["model"]
+        elif provider in ("automaticai", "automatic_ai", "aai"):
+            model = os.environ.get("AUTOMATICAI_MODEL", "voyage-4")
         elif provider in ("openrouter", "open_router"):
             model = os.environ.get("OPENROUTER_MODEL", "voyage-4")
         elif provider == "voyage":
@@ -113,7 +116,14 @@ def _make_provider(args: argparse.Namespace) -> EmbeddingProvider:
     base_url = provider_config.get("base_url") or config.get("base_url")
 
     api_key = ""
-    if provider == "voyage":
+    if provider in ("automaticai", "automatic_ai", "aai"):
+        api_key = (
+            os.environ.get("AUTOMATICAI_API_KEY", "")
+            or os.environ.get("NEWAPI_API_KEY", "")
+            or provider_config.get("api_key", "")
+            or config.get("api_key", "")
+        )
+    elif provider == "voyage":
         api_key = (
             os.environ.get("VOYAGE_API_KEY", "")
             or provider_config.get("api_key", "")
@@ -649,7 +659,16 @@ def _build_parser(config: dict[str, Any] | None = None) -> argparse.ArgumentPars
     common.add_argument(
         "--provider",
         default=provider_default,
-        choices=["fake", "voyage", "openrouter", "open_router"],
+        choices=[
+            "fake",
+            "voyage",
+            "openrouter",
+            "open_router",
+            "automaticai",
+            "automatic_ai",
+            "automatic-ai",
+            "aai",
+        ],
         help=f"Embedding provider (default: {provider_default}; fake is for explicit offline testing only)",
     )
     common.add_argument(

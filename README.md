@@ -164,6 +164,19 @@ There is no automatic fallback to fake embeddings.
 codegraph-voyage index --provider fake
 ```
 
+## AutomaticAI Gateway (`automaticai`)
+
+`codegraph-voyage` supports routing embeddings through the private AutomaticAI LLM gateway (`https://api.automaticai.io/v1/embeddings`).
+
+Set `AUTOMATICAI_API_KEY` (or it will automatically resolve from 1Password at `op://DeLoSecrets/NewAPI Virtual Keys/codegraph-voyage`):
+
+```bash
+export AUTOMATICAI_API_KEY="$(op read 'op://DeLoSecrets/NewAPI Virtual Keys/codegraph-voyage')"
+codegraph-voyage index --provider automaticai --model "voyage-4"
+```
+
+Supported aliases: `automaticai`, `automatic_ai`, `automatic-ai`, `aai`.
+
 ## OpenRouter Provider
 
 `codegraph-voyage` supports OpenRouter's OpenAI-compatible embeddings API.

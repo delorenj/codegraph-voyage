@@ -4,6 +4,7 @@ Hybrid semantic retrieval sidecar for CodeGraph. Builds symbol-level documents f
 
 ## Providers
 
+- **AutomaticAI (`automaticai`)**: Private LLM gateway at `https://api.automaticai.io/v1/embeddings`. Uses `AUTOMATICAI_API_KEY` (or 1Password `op://DeLoSecrets/NewAPI Virtual Keys/codegraph-voyage`). Defaults to `voyage-4`. Aliases: `automatic_ai`, `automatic-ai`, `aai`.
 - **OpenRouter (`openrouter`)**: OpenAI-compatible embedding API at `https://openrouter.ai/api/v1/embeddings`. Requires `OPENROUTER_API_KEY`. Supports any embedding model (e.g., `voyage-4`, `voyageai/voyage-code-4`, `openai/text-embedding-3-small`).
 - **Voyage AI (`voyage`)**: Official Voyage embeddings API at `https://api.voyageai.com/v1/embeddings`. Requires `VOYAGE_API_KEY`. Defaults to `voyage-code-4`.
 - **Fake (`fake`)**: Offline, deterministic pseudo-random embedding generator for testing and CI.

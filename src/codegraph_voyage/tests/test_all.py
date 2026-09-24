@@ -1470,6 +1470,136 @@ class TestCLIOpenRouterAndConfig(unittest.TestCase):
             finally:
                 sidecar.close()
 
+    def test_cli_respects_xdg_config_automaticai(self):
+        from codegraph_voyage.cli import main
+        from codegraph_voyage.sidecar import SidecarDB
+        with tempfile.TemporaryDirectory() as xdg_tmp, tempfile.TemporaryDirectory() as proj_tmp:
+            xdg_app_dir = Path(xdg_tmp) / "codegraph-voyage"
+            xdg_app_dir.mkdir()
+            (xdg_app_dir / "config.toml").write_text(
+                'provider = "automaticai"\nmodel = "voyage-4"\ndimensions = 2\n'
+            )
+
+            graph_dir = Path(proj_tmp) / ".codegraph"
+            graph_dir.mkdir()
+            (graph_dir / "codegraph.db").touch()
+            doc = {
+                "node_id": "n1", "document": "def hello(): pass",
+                "node_kind": "function", "name": "hello", "qualified_name": "hello",
+                "file_path": "hello.py", "language": "python", "start_line": 1,
+                "end_line": 1,
+            }
+            fake_resp = json.dumps({"data": [{"index": 0, "embedding": [0.5, 0.9]}]}).encode("utf-8")
+            with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": xdg_tmp, "AUTOMATICAI_API_KEY": "dummy"}), mock.patch(
+                "codegraph_voyage.cli.build_documents_from_db", return_value=[doc]
+            ), mock.patch("urllib.request.urlopen") as mock_url, mock.patch("sys.stdout", io.StringIO()):
+                resp_mock = mock.MagicMock()
+                resp_mock.__enter__.return_value.read.return_value = fake_resp
+                mock_url.return_value = resp_mock
+                rc = main(["index", "--project", proj_tmp])
+            self.assertEqual(rc, 0)
+
+            sidecar = SidecarDB(graph_dir / "codegraph-voyage.db")
+            sidecar.open()
+            try:
+                self.assertEqual(sidecar.get_status()["model_groups"], [["voyage-4", 2, "float32", 1]])
+            finally:
+                sidecar.close()
+
+
+class TestAutomaticAIEmbeddingProvider(unittest.TestCase):
+    """AutomaticAIEmbeddingProvider unit tests."""
+
+    def test_automaticai_requires_api_key(self):
+        from codegraph_voyage.providers import AutomaticAIEmbeddingProvider, create_provider
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch("shutil.which", return_value=None):
+            with self.assertRaisesRegex(ValueError, "AUTOMATICAI_API_KEY"):
+                AutomaticAIEmbeddingProvider()
+            with self.assertRaisesRegex(ValueError, "AUTOMATICAI_API_KEY"):
+                create_provider("automaticai")
+
+    def test_automaticai_factory_and_properties(self):
+        from codegraph_voyage.providers import AutomaticAIEmbeddingProvider, create_provider
+        provider = create_provider(
+            "automaticai",
+            api_key="test-key",
+            model="voyage-4",
+            dimensions=256,
+        )
+        self.assertIsInstance(provider, AutomaticAIEmbeddingProvider)
+        self.assertEqual(provider.model_name, "voyage-4")
+        self.assertEqual(provider.dimensions, 256)
+
+    def test_automaticai_query_and_headers(self):
+        from codegraph_voyage.providers import AutomaticAIEmbeddingProvider
+        provider = AutomaticAIEmbeddingProvider(api_key="test-key", dimensions=2)
+        fake_response = json.dumps({
+            "object": "list",
+            "data": [{"index": 0, "embedding": [0.4, 0.8]}],
+        }).encode("utf-8")
+
+        with mock.patch("urllib.request.urlopen") as mock_urlopen:
+            resp_mock = mock.MagicMock()
+            resp_mock.__enter__.return_value.read.return_value = fake_response
+            mock_urlopen.return_value = resp_mock
+
+            result = provider.embed_query("search query")
+            req = mock_urlopen.call_args[0][0]
+            self.assertEqual(req.headers["Authorization"], "Bearer test-key")
+            self.assertEqual(req.headers["User-agent"], "automaticai-client/1.0 (+codegraph-voyage)")
+            self.assertEqual(result, [0.4, 0.8])
+
+    def test_automaticai_empty_texts(self):
+        from codegraph_voyage.providers import AutomaticAIEmbeddingProvider
+        provider = AutomaticAIEmbeddingProvider(api_key="test-key")
+        with mock.patch("urllib.request.urlopen") as mock_urlopen:
+            result = provider.embed_documents(["", "  "])
+            mock_urlopen.assert_not_called()
+            self.assertEqual(result, [[], []])
+
+    def test_automaticai_mixed_empty_and_valid(self):
+        from codegraph_voyage.providers import AutomaticAIEmbeddingProvider
+        provider = AutomaticAIEmbeddingProvider(api_key="test-key", dimensions=3)
+        fake_response = json.dumps({
+            "data": [
+                {"index": 0, "embedding": [0.1, 0.2, 0.3]},
+                {"index": 1, "embedding": [0.4, 0.5, 0.6]},
+            ]
+        }).encode("utf-8")
+
+        with mock.patch("urllib.request.urlopen") as mock_urlopen:
+            resp_mock = mock.MagicMock()
+            resp_mock.__enter__.return_value.read.return_value = fake_response
+            mock_urlopen.return_value = resp_mock
+
+            result = provider.embed_documents(["hello", "", "world"])
+            self.assertEqual(len(result), 3)
+            self.assertEqual(result[0], [0.1, 0.2, 0.3])
+            self.assertEqual(result[1], [])
+            self.assertEqual(result[2], [0.4, 0.5, 0.6])
+
+    def test_automaticai_http_error_includes_message(self):
+        from codegraph_voyage.providers import AutomaticAIEmbeddingProvider
+        provider = AutomaticAIEmbeddingProvider(api_key="test-key")
+        err_body = json.dumps({
+            "error": {"message": "ZDR violation by account settings", "code": 404}
+        }).encode("utf-8")
+        fp = io.BytesIO(err_body)
+        error = urllib.error.HTTPError(
+            url="https://api.automaticai.io/v1/embeddings",
+            code=404,
+            msg="Not Found",
+            hdrs=email.message.Message(),
+            fp=fp,
+        )
+
+        with mock.patch("urllib.request.urlopen", side_effect=error):
+            with self.assertRaises(RuntimeError) as ctx:
+                provider.embed_documents(["hello"])
+            self.assertIn("404", str(ctx.exception))
+            self.assertIn("ZDR violation", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
+
