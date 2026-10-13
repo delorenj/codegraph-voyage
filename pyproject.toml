@@ -12,10 +12,11 @@ license = { text = "MIT" }
 authors = [
     { name = "Jarad", email = "delorenj@delo.sh" }
 ]
-dependencies = []
-
-[project.optional-dependencies]
-mcp = ["mcp>=1.0.0"]
+# mcp is a core dependency: the codegraph-voyage-mcp console script is always
+# installed, so it must never be importable-broken by a missing optional extra.
+# >=2.0.0 because mcp_server imports MCPServer from mcp.server.mcpserver, the
+# 2.x API (in 1.x that module does not exist).
+dependencies = ["mcp>=2.0.0"]
 
 [project.scripts]
 codegraph-voyage = "codegraph_voyage.cli:main"
