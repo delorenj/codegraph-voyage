@@ -109,4 +109,3 @@ component main, superseding the earlier review-only AC10 instruction. Preserve
 the shared main checkout's seven pre-existing dirty paths; do not resolve or
 absorb another owner's conflicting edits. Landing status is established by Git
 remote ancestry, not inferred from this review verdict.
-
