@@ -40,11 +40,19 @@ Agents equipped with `codegraph-voyage` aren't just searching for strings; they 
 
 ## Setup
 
+Install the standalone package from this repository (Python 3.10+; the
+packaged `mcp>=2.0.0` dependency is installed with it):
+
 ```bash
-# No dependencies beyond stdlib (Python 3.10+)
-# Optional: set VOYAGE_API_KEY for real embedding
-export VOYAGE_API_KEY="paas-...-...-..."
+python -m pip install -e .
+codegraph-voyage --help
 ```
+
+`pyproject.toml` exposes the `codegraph-voyage` and `codegraph-voyage-mcp`
+console scripts. Install CodeGraph separately and run `codegraph init` (or
+`codegraph sync`) in the target project before using this sidecar. For Voyage
+indexing, export `VOYAGE_API_KEY` in the process environment; do not put the
+key on the command line.
 
 ## Privacy & retention risk
 
@@ -105,9 +113,12 @@ codegraph-voyage index --file-filter "src/auth"
 
 ### `search` / `semantic_candidates`
 
-Performs hybrid lexical + vector search on the indexed corpus. Results are
-fused via weighted RRF. Exact identifier and path matches are **pinned** to
-the top of results.
+Performs hybrid lexical + vector search on CodeGraph documents when a
+compatible sidecar and provider are available. Results are fused via weighted
+RRF. Exact identifier and path matches are **pinned** to the top. Without a
+sidecar or with missing credentials, `search` and `semantic_candidates` return
+lexical-only results from the current CodeGraph DB; no embeddings are generated
+or stored. A provider request failure likewise falls back to lexical results.
 
 ```bash
 codegraph-voyage search "user authentication"
@@ -117,7 +128,9 @@ codegraph-voyage search "AuthService" --top-k 10 --json
 ### `explore`
 
 Runs hybrid search, then passes the top-ranked candidate symbols to
-`codegraph explore` for a full dependency-graph walk.
+`codegraph explore` for a full dependency-graph walk. If vector lookup is
+unavailable, it still runs the actual CodeGraph exploration on lexical
+candidates (including pinned exact matches).
 
 ```bash
 codegraph-voyage explore "PaymentGateway" --max-files 8
@@ -134,25 +147,26 @@ codegraph-voyage status
 
 ## Architecture
 
-```
-tools/codegraph_voyage/
+```text
+src/codegraph_voyage/
 ├── __init__.py       # Package metadata
 ├── __main__.py       # python -m entry point
 ├── cli.py            # CLI argument parsing and command dispatch
-├── document.py       # Symbol-level document construction from CodeGraph nodes
-├── providers.py      # EmbeddingProvider ABC, FakeEmbeddingProvider, VoyageEmbeddingProvider
+├── document.py       # Symbol-level documents from CodeGraph nodes
+├── providers.py      # Embedding providers (fake, Voyage, OpenRouter, AutomaticAI)
 ├── ranking.py        # Weighted RRF, pinned candidates, cosine similarity
-├── sidecar.py        # SQLite sidecar for embedding storage with incremental indexing
+├── sidecar.py        # SQLite incremental embedding storage
 ├── sanitize.py       # Path/content sanitization before remote transmission
 ├── explore.py        # Integration with `codegraph explore` CLI
 └── tests/
-    ├── __init__.py
-    ├── test_all.py   # Unit test suite
-    └── benchmark.py  # Retrieval quality benchmark (smoke)
+    ├── test_all.py
+    ├── test_benchmark_ndcg.py
+    ├── test_fail_open.py
+    └── benchmark.py
 ```
 
-The importable Python path is `tools.codegraph_voyage` (the underscore is
-standard for multi-word CLI package names).
+The standalone distribution is installed from `pyproject.toml`; its importable
+Python package is `codegraph_voyage`, not a `tools.*` module.
 
 ## Offline / fake mode
 
@@ -251,9 +265,16 @@ and that fusion can improve over the worst single strategy.
 
 ## Testing
 
+From the installed standalone checkout:
+
 ```bash
-python -m codegraph_voyage.tests.test_all
+python -m unittest discover -s src/codegraph_voyage/tests -p 'test*.py' -q
+python -m codegraph_voyage.tests.benchmark
 ```
+
+The first command includes NDCG normalization and credential fail-open
+regressions; the second prints per-strategy smoke metrics. Use the same Python
+environment used to install the console scripts.
 
 ## Publishing
 

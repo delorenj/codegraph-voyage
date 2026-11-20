@@ -164,6 +164,18 @@ def _make_provider_or_report(args: argparse.Namespace) -> EmbeddingProvider | No
         return None
 
 
+def _retrieval_provider(args: argparse.Namespace) -> tuple[EmbeddingProvider | None, bool]:
+    """Return no provider only when credentials are missing; keep other config errors."""
+    try:
+        return _make_provider(args), False
+    except ValueError as exc:
+        if "API_KEY is required" in str(exc):
+            print(f"Vector lookup unavailable; continuing lexical-only: {exc}", file=sys.stderr)
+            return None, False
+        print(f"Error: {exc}", file=sys.stderr)
+        return None, True
+
+
 def _sidecar_model_mismatch(
     status: dict[str, Any], provider: EmbeddingProvider
 ) -> str | None:
@@ -307,15 +319,8 @@ def cmd_search(args: argparse.Namespace) -> int:
     if not cg_db.is_file():
         print(f"Error: CodeGraph DB not found at {cg_db}", file=sys.stderr)
         return 1
-    if not sidecar_db.is_file():
-        print(
-            f"Sidecar DB not found at {sidecar_db}. Run 'index' first.",
-            file=sys.stderr,
-        )
-        return 1
-
-    provider = _make_provider_or_report(args)
-    if provider is None:
+    provider, invalid_provider = _retrieval_provider(args)
+    if invalid_provider:
         return 2
 
     # Build lexical candidates (all docs)
@@ -330,17 +335,21 @@ def cmd_search(args: argparse.Namespace) -> int:
         file_filter=args.file_filter,
     )
 
-    # Load sidecar embeddings
-    sidecar = SidecarDB(sidecar_db)
-    sidecar.open()
-    try:
-        mismatch = _sidecar_model_mismatch(sidecar.get_status(), provider)
-        if mismatch:
-            print(f"Error: {mismatch}", file=sys.stderr)
-            return 2
-        emb_candidates = sidecar.get_all_embeddings(provider)
-    finally:
-        sidecar.close()
+    # Load sidecar embeddings only when a query embedding is possible.
+    emb_candidates: list[dict[str, Any]] = []
+    if provider is not None and sidecar_db.is_file():
+        sidecar = SidecarDB(sidecar_db)
+        sidecar.open()
+        try:
+            mismatch = _sidecar_model_mismatch(sidecar.get_status(), provider)
+            if mismatch:
+                print(f"Error: {mismatch}", file=sys.stderr)
+                return 2
+            emb_candidates = sidecar.get_all_embeddings(provider)
+        finally:
+            sidecar.close()
+    elif provider is not None:
+        print("Sidecar DB not found; continuing lexical-only. Run 'index' for vector search.", file=sys.stderr)
 
     # Match docs with embeddings
     emb_map = {c["node_id"]: c for c in emb_candidates}
@@ -377,13 +386,14 @@ def cmd_search(args: argparse.Namespace) -> int:
     ]
 
     # Generate query embedding; network/API failure degrades to lexical-only.
-    if not args.json:
-        print("Generating query embedding...")
-    try:
-        query_vector = provider.embed_query(query, input_type="query")
-    except (RuntimeError, OSError, ValueError) as exc:
-        print(f"Vector lookup unavailable; continuing lexical-only: {exc}", file=sys.stderr)
-        query_vector = None
+    query_vector = None
+    if provider is not None and sidecar_db.is_file():
+        if not args.json:
+            print("Generating query embedding...")
+        try:
+            query_vector = provider.embed_query(query, input_type="query")
+        except (RuntimeError, OSError, ValueError) as exc:
+            print(f"Vector lookup unavailable; continuing lexical-only: {exc}", file=sys.stderr)
 
     # Find pinned candidates
     if not args.json:
@@ -489,8 +499,8 @@ def cmd_explore(args: argparse.Namespace) -> int:
         print(f"Error: CodeGraph DB not found at {cg_db}", file=sys.stderr)
         return 1
 
-    provider = _make_provider_or_report(args)
-    if provider is None:
+    provider, invalid_provider = _retrieval_provider(args)
+    if invalid_provider:
         return 2
     sidecar_available = sidecar_db.is_file()
 
@@ -518,7 +528,8 @@ def cmd_explore(args: argparse.Namespace) -> int:
 
     # Query embedding
     query_vector = None
-    if sidecar_available:
+    vector_candidates: list[dict[str, Any]] = []
+    if sidecar_available and provider is not None:
         sidecar = SidecarDB(sidecar_db)
         sidecar.open()
         try:
@@ -539,8 +550,8 @@ def cmd_explore(args: argparse.Namespace) -> int:
                 query_vector = None
         finally:
             sidecar.close()
-    else:
-        vector_candidates = []
+    elif provider is not None:
+        print("Sidecar DB not found; continuing lexical-only. Run 'index' for vector search.", file=sys.stderr)
 
     # Pinned
     pinned = find_pinned_candidates(query, lexical_candidates + vector_candidates)
