@@ -128,11 +128,11 @@ def dcg(relevances: list[float]) -> float:
 
 
 def ndcg(ranked_ids: list[str], relevant: set[str], k: int = 10) -> float:
-    """NDCG@k."""
-    ranked = ranked_ids[:k]
-    # Binary relevance: 1 if in relevant set
-    relevances = [1.0 if rid in relevant else 0.0 for rid in ranked]
-    ideal = sorted(relevances, reverse=True)
+    """Binary NDCG@k normalized against all relevant symbols, not just retrieved ones."""
+    if k <= 0 or not relevant:
+        return 0.0
+    relevances = [1.0 if rid in relevant else 0.0 for rid in ranked_ids[:k]]
+    ideal = [1.0] * min(k, len(relevant))
     dcg_val = dcg(relevances)
     idcg_val = dcg(ideal)
     return dcg_val / idcg_val if idcg_val > 0 else 0.0
