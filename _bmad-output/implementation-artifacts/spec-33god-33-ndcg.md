@@ -86,3 +86,27 @@ and a fresh `codegraph init` graph for the actual native walk. Run the standalon
 suite command in README with CodeGraph on PATH. The older scratch
 `33god33_independent_probe.py` asserts the previous failure and must be updated
 before rerunning; it is not acceptance evidence after this repair.
+
+## Final review and delivery authorization (2026-11-20)
+
+Independent follow-up review of `3d2a31d4f7757b4757ff373baaf74b52a1c7b845`
+passed AC5 and AC9 without an actionable regression. The prior AC5/AC9 failures
+in the baseline review are superseded, not erased. A captured (not live) Voyage
+HTTP document/query probe verified `voyage-code-4`, explicit two-dimensional
+vectors, sensitive-path exclusion and secret-line redaction; missing-key and
+simulated network failures kept retrieval lexical-only. Installed native
+CodeGraph exploration on a disposable index returned source with and without a
+sidecar, without changing the CodeGraph DB. The isolated full suite ran 94 tests
+OK; metric checks returned partial `0.6131471927654584`, full `1.0`, empty
+`0.0`. The three-strategy fake-vector benchmark is executable, but cannot
+establish retrieval quality improvement. The README now reflects the standalone
+package and verification commands. No live Voyage request, production indexing,
+release or deployment is claimed. See `evidence/33god-33.md` for the bounded
+acceptance matrix and exact repeatable checks.
+
+The owner subsequently authorized committing and landing this candidate on
+component main, superseding the earlier review-only AC10 instruction. Preserve
+the shared main checkout's seven pre-existing dirty paths; do not resolve or
+absorb another owner's conflicting edits. Landing status is established by Git
+remote ancestry, not inferred from this review verdict.
+
